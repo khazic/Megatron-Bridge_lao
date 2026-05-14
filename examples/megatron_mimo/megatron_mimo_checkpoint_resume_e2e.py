@@ -278,10 +278,7 @@ def _build_config(
         # checkpoint access pattern validation for nested DDP language model params.
         fully_parallel_save=(llm_pp == 1),
         dist_ckpt_optim_fully_reshardable=True,
-        # MiMo RNG save is not yet supported: each module produces ShardedObject
-        # with key "rng_state" using module-local PP/TP/DP ranks, causing
-        # duplicate shard keys across modules.  Disable until upstream fix.
-        save_rng=False,
+        save_rng=True,
     )
     if load_dir is not None:
         ckpt_cfg.load = load_dir
