@@ -35,6 +35,9 @@ def set_gpt_oss_common_configs(cfg: ConfigContainer) -> None:
 
     cfg.model.moe_router_force_load_balancing = True
 
+    cfg.optimizer.optimizer_cuda_graph = True
+    cfg.checkpoint.save = None
+
 
 def gpt_oss_120b_pretrain_config_gb300(
     precision: str = "bf16", mock: bool = True, config_variant: str = "v1"
