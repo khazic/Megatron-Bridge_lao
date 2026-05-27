@@ -246,8 +246,13 @@ def set_workload_base_configs(cfg: ConfigContainer, settings: WorkloadBaseConfig
         cfg.model.offload_modules = settings.offload_modules
     if settings.fp8_param_gather is not None:
         cfg.mixed_precision.fp8_param_gather = settings.fp8_param_gather
-    if settings.reuse_grad_buf_for_mxfp8_param_ag is not None:
-        cfg.mixed_precision.reuse_grad_buf_for_mxfp8_param_ag = settings.reuse_grad_buf_for_mxfp8_param_ag
+    if settings.fp8_param is not None:
+        cfg.mixed_precision.fp8_param = settings.fp8_param
+
+    if settings.outer_dp_sharding_strategy is not None:
+        cfg.ddp.outer_dp_sharding_strategy = settings.outer_dp_sharding_strategy
+    if settings.num_distributed_optimizer_instances is not None:
+        cfg.ddp.num_distributed_optimizer_instances = settings.num_distributed_optimizer_instances
 
     if settings.moe_flex_dispatcher_backend is not None:
         apply_flex_dispatcher_backend(cfg.model, settings.moe_flex_dispatcher_backend)
