@@ -79,6 +79,7 @@ training/moe-optimization.md
 training/peft.md
 training/packed-sequences.md
 training/multi-token-prediction.md
+training/dspark-speculative-decoding.md
 training/callbacks.md
 ```
 
