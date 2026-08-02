@@ -56,7 +56,9 @@ class DSparkForwardOutput:
         target_ids: Teacher-forced next token per position
             ``[batch, num_blocks, block_size]``.
         eval_mask: Bool/float supervision mask ``[batch, num_blocks, block_size]``
-            (a block is a contiguous, in-bounds, loss-enabled prefix).
+            (a block is a contiguous, in-bounds, loss-enabled prefix). Positions
+            outside the mask may carry sentinel ids or non-finite padded values;
+            :func:`dspark_loss` sanitizes them before computing any term.
         block_keep_mask: Kept-anchor mask ``[batch, num_blocks]``.
         confidence_pred: Optional per-position acceptance logit
             ``[batch, num_blocks, block_size]``.
@@ -141,9 +143,18 @@ def dspark_loss(
     _, _, block_size, vocab_size = draft_logits.shape
     weight = _loss_weight_mask(outputs.eval_mask, block_size, loss_decay_gamma)  # [B, N, L]
 
+    # Positions outside eval_mask may carry sentinel target ids (e.g. -1 / -100)
+    # or non-finite padded logits. Sanitize the inputs at those positions:
+    # zero-weighting alone is not enough (0 * NaN == NaN, and a non-finite
+    # forward row still yields NaN gradients through cross_entropy's backward).
+    eval_bool = outputs.eval_mask.bool()
+    pos_mask = eval_bool.unsqueeze(-1)
+    draft_logits = torch.where(pos_mask, draft_logits, 0.0)
+    target_ids = outputs.target_ids.long().masked_fill(~eval_bool, 0)
+
     # Cross-entropy against the teacher-forced next tokens.
     ce_per_token = F.cross_entropy(
-        draft_logits.reshape(-1, vocab_size), outputs.target_ids.reshape(-1).long(), reduction="none"
+        draft_logits.reshape(-1, vocab_size), target_ids.reshape(-1), reduction="none"
     ).reshape_as(weight)
     ce_num = (ce_per_token * weight).sum()
     ce_den = weight.sum()
@@ -161,16 +172,17 @@ def dspark_loss(
     accept_rate = None
     if target_logits is not None and (l1_alpha > 0 or has_confidence):
         l1_dist = _l1_distance_per_token(draft_logits, target_logits)  # [B, N, L] == 2 * TV
+        # Non-finite teacher rows at masked positions surface as NaN here; scrub
+        # the [B, N, L] distance instead of copying the full-vocab teacher tensor.
+        l1_dist = torch.where(eval_bool, l1_dist, 0.0)
         accept_rate = (1.0 - 0.5 * l1_dist).clamp_(0.0, 1.0)
         if l1_alpha > 0:
             l1_num = (l1_dist * weight).sum()
             l1_den = weight.sum()
         if has_confidence:
+            confidence_pred = torch.where(eval_bool, outputs.confidence_pred.float(), 0.0)
             conf_num = (
-                F.binary_cross_entropy_with_logits(
-                    outputs.confidence_pred.float(), accept_rate.detach(), reduction="none"
-                )
-                * weight
+                F.binary_cross_entropy_with_logits(confidence_pred, accept_rate.detach(), reduction="none") * weight
             ).sum()
             conf_den = weight.sum()
 
