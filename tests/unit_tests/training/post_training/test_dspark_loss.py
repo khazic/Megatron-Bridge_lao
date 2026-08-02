@@ -16,6 +16,7 @@
 
 import pytest
 import torch
+import torch.distributed as dist
 
 from megatron.bridge.training.post_training.dspark.loss import DSparkForwardOutput, dspark_loss
 
@@ -83,6 +84,22 @@ def test_missing_target_logits_raises_when_tv_requested():
     out = _outputs(with_target=False, with_confidence=False)
     with pytest.raises(ValueError, match="aligned_target_logits is required"):
         dspark_loss(out, l1_alpha=0.9)
+
+
+def test_multi_rank_distributed_without_dp_group_raises(monkeypatch):
+    out = _outputs(with_target=False, with_confidence=False)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda group=None: 2)
+    with pytest.raises(RuntimeError, match="dp_group is None"):
+        dspark_loss(out, l1_alpha=0.0, confidence_alpha=0.0)
+
+
+def test_single_rank_distributed_allows_local_loss(monkeypatch):
+    out = _outputs(with_target=False, with_confidence=False)
+    monkeypatch.setattr(dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(dist, "get_world_size", lambda group=None: 1)
+    loss, _ = dspark_loss(out, ce_alpha=0.1, l1_alpha=0.0, confidence_alpha=0.0)
+    assert torch.isfinite(loss)
 
 
 def test_eval_mask_zero_positions_do_not_contribute():
